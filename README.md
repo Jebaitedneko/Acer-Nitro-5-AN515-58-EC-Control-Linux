@@ -2,6 +2,10 @@
 
 Implementation of basic EC registers that NitroSense Modifies, as a Bash Script
 
+The script also restores Keyboard RGB Profile set in Windows
+
+Along with setting PL1 and PL2 limits via MSR and MCHBAR
+
 # Requirements
 
 Kernel Commandline (/etc/default/grub)
