@@ -1,0 +1,87 @@
+#!/bin/bash
+
+if [ $# -le 0 ]; then
+	echo "PWR:  [q]uiet [d]efault [p]erformance"
+	echo "FAN:  [a]uto  [c]ustom  [m]ax"
+	echo "DBG: e[x]tract ec"
+	exit
+fi
+
+if [ "$(lsmod | grep ec_sys | wc -c)" -gt 0 ]; then
+	sudo rmmod ec_sys
+fi
+
+LOAD_MODULE=$(sudo insmod ~/ec_sys.ko write_support=1)
+if ! $LOAD_MODULE; then
+	sudo dmesg | tail
+	exit
+fi
+
+EC=/sys/kernel/debug/ec/ec0/io
+
+function ecw() {
+	# shellcheck disable=SC2059
+    printf "$2" | sudo dd of=$EC bs=1 seek="$1" count=1 conv=notrunc &> /dev/null
+}
+
+ecw $((0x03)) '\x11' # Write-Enable
+
+if [[ $(sudo ls $EC 2>/dev/null) ]]; then
+	if [[ $* =~ "q" ]]; then
+		echo "PWR - Quiet"
+		ecw $((0x2c)) '\x00' # 00 01 04 PWR: quiet default perf
+		ecw $((0x2d)) '\x04' # 04 05 PWR
+	fi
+	if [[ $* =~ "d" ]]; then
+		echo "PWR - Default"
+		ecw $((0x2c)) '\x01' # 00 01 04 PWR: quiet default perf
+		ecw $((0x2d)) '\x04' # 04 05 PWR
+	fi
+	if [[ $* =~ "p" ]]; then
+		echo "PWR - Performance"
+		ecw $((0x2c)) '\x04' # 00 01 04 PWR: quiet default perf
+		ecw $((0x2d)) '\x04' # 04 05 PWR
+	fi
+	if [[ $* =~ "a" ]]; then
+		echo "FAN - Auto"
+		ecw $((0x21)) '\x10' # 10 20 30 GPUF: auto max cust
+		ecw $((0x22)) '\x04' # 04 08 0c CPUF: auto max cust
+	fi
+	if [[ $* =~ "c" ]]; then
+		if [ -z "$2" ]; then
+			echo "Specify FAN Percentage as Second Arg"
+		else
+			PCT="\x$(printf %x "$2")"
+			echo "FAN - Custom ($2%)"
+			ecw $((0x21)) '\x30' # 10 20 30 GPUF: auto max cust
+			ecw $((0x22)) '\x0c' # 04 08 0c CPUF: auto max cust
+			ecw $((0x37)) "$PCT" # 32 64 CPUF PCT: 0-100%
+			ecw $((0x3a)) "$PCT" # 32 64 GPUF PCT: 0-100%
+		fi
+	fi
+	if [[ $* =~ "m" ]]; then
+		echo "FAN - Max"
+		ecw $((0x21)) '\x20' # 10 20 30 GPUF: auto max cust
+		ecw $((0x22)) '\x08' # 04 08 0c CPUF: auto max cust
+	fi
+fi
+
+MSR=/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0
+MCH=/sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0
+PL1=constraint_0_power_limit_uw
+P1T=constraint_0_time_window_us
+PL2=constraint_1_power_limit_uw
+P2T=constraint_1_time_window_us
+NODES=("$MSR" "$MCH")
+for N in "${NODES[@]}"; do
+	echo 95000000 | sudo tee "$N"/{$PL1,$PL2} > /dev/null
+	echo 60000000 | sudo tee "$N"/{$P1T,$P2T} > /dev/null
+	echo "PL1 PL2" "$(($(sudo cat "$N"/$PL1)/1000000))w" "$(($(sudo cat "$N"/$PL2)/1000000))w"
+	echo "P1T P2T" "$(($(sudo cat "$N"/$P1T)/1000000))s" "$(($(sudo cat "$N"/$P2T)/1000000))s"
+done
+
+if [[ $* =~ "x" ]]; then
+	if [[ $(sudo ls $EC 2>/dev/null) ]]; then
+		sudo xxd -g1 $EC
+	fi
+fi
