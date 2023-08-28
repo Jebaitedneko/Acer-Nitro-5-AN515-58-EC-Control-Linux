@@ -7,15 +7,30 @@ if [ $# -le 0 ]; then
 	exit
 fi
 
-if [ "$(lsmod | grep ec_sys | wc -c)" -gt 0 ]; then
+if [[ "$(lsmod | grep ec_sys | wc -c)" -gt 0 && ! -f /tmp/.mod-ec_sys-init ]]; then
 	sudo rmmod ec_sys
+	if ! sudo insmod ~/ec_sys.ko write_support=1; then
+		sudo dmesg | tail
+		exit
+	else
+		touch /tmp/.mod-ec_sys-init
+	fi
+else
+	echo "Custom ec_sys loaded as /tmp/.mod-ec_sys-init exists"
 fi
 
-LOAD_MODULE=$(sudo insmod ~/ec_sys.ko write_support=1)
-if ! $LOAD_MODULE; then
-	sudo dmesg | tail
-	exit
+if [[ "$(lsmod | grep uvcvideo | wc -c)" -gt 0 && ! -f /tmp/.mod-uvcvideo-init ]]; then
+	sudo rmmod uvcvideo
+	if ! sudo insmod ~/uvcvideo.ko; then
+			sudo dmesg | tail
+			exit
+	else
+		touch /tmp/.mod-uvcvideo-init
+	fi
+else
+	echo "Custom uvcvideo loaded as /tmp/.mod-uvcvideo-init exists"
 fi
+
 
 EC=/sys/kernel/debug/ec/ec0/io
 
@@ -31,16 +46,19 @@ if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 		echo "PWR - Quiet"
 		ecw $((0x2c)) '\x00' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
+		sudo systemctl restart nvidia-powerd
 	fi
 	if [[ $* =~ "d" ]]; then
 		echo "PWR - Default"
 		ecw $((0x2c)) '\x01' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
+		sudo systemctl restart nvidia-powerd
 	fi
 	if [[ $* =~ "p" ]]; then
 		echo "PWR - Performance"
 		ecw $((0x2c)) '\x04' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
+		sudo systemctl restart nvidia-powerd
 	fi
 	if [[ $* =~ "a" ]]; then
 		echo "FAN - Auto"
@@ -66,18 +84,12 @@ if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 	fi
 fi
 
-MSR=/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0
-MCH=/sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0
-PL1=constraint_0_power_limit_uw
-P1T=constraint_0_time_window_us
-PL2=constraint_1_power_limit_uw
-P2T=constraint_1_time_window_us
-NODES=("$MSR" "$MCH")
-for N in "${NODES[@]}"; do
-	echo 95000000 | sudo tee "$N"/{$PL1,$PL2} > /dev/null
-	echo 60000000 | sudo tee "$N"/{$P1T,$P2T} > /dev/null
-	echo "PL1 PL2" "$(($(sudo cat "$N"/$PL1)/1000000))w" "$(($(sudo cat "$N"/$PL2)/1000000))w"
-	echo "P1T P2T" "$(($(sudo cat "$N"/$P1T)/1000000))s" "$(($(sudo cat "$N"/$P2T)/1000000))s"
+for P in "constraint_*_power_limit_uw" "constraint_*_max_power_uw"; do
+	find /sys/devices/virtual/powercap -type f -iname "$P" -exec bash -c "echo 90000000 | sudo tee {} &>/dev/null && if cat {} &>/dev/null; then echo {} && cat {}; fi" \;
+done
+
+for P in "constraint_*_time_window_us"; do
+	find /sys/devices/virtual/powercap -type f -iname "$P" -exec bash -c "echo 60000000 | sudo tee {} &>/dev/null && if cat {} &>/dev/null; then echo {} && cat {}; fi" \;
 done
 
 if [[ $* =~ "x" ]]; then
