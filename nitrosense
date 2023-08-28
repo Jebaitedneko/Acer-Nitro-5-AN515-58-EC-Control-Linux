@@ -13,7 +13,7 @@ if [[ "$(lsmod | grep ec_sys | wc -c)" -gt 0 && ! -f /tmp/.mod-ec_sys-init ]]; t
 		sudo dmesg | tail
 		exit
 	else
-		touch /tmp/.mod-ec_sys-init
+		echo 1 > /tmp/.mod-ec_sys-init
 	fi
 else
 	echo "Custom ec_sys loaded as /tmp/.mod-ec_sys-init exists"
@@ -22,10 +22,10 @@ fi
 if [[ "$(lsmod | grep uvcvideo | wc -c)" -gt 0 && ! -f /tmp/.mod-uvcvideo-init ]]; then
 	sudo rmmod uvcvideo
 	if ! sudo insmod ~/uvcvideo.ko; then
-			sudo dmesg | tail
-			exit
+		sudo dmesg | tail
+		exit
 	else
-		touch /tmp/.mod-uvcvideo-init
+		echo 1 > /tmp/.mod-uvcvideo-init
 	fi
 else
 	echo "Custom uvcvideo loaded as /tmp/.mod-uvcvideo-init exists"
@@ -84,12 +84,8 @@ if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 	fi
 fi
 
-for P in "constraint_*_power_limit_uw" "constraint_*_max_power_uw"; do
-	find /sys/devices/virtual/powercap -type f -iname "$P" -exec bash -c "echo 90000000 | sudo tee {} &>/dev/null && if cat {} &>/dev/null; then echo {} && cat {}; fi" \;
-done
-
-for P in "constraint_*_time_window_us"; do
-	find /sys/devices/virtual/powercap -type f -iname "$P" -exec bash -c "echo 60000000 | sudo tee {} &>/dev/null && if cat {} &>/dev/null; then echo {} && cat {}; fi" \;
+for P in "constraint_*_power_limit_uw" "constraint_*_max_power_uw" "constraint_*_time_window_us"; do
+	find /sys/devices/virtual/powercap -type f -iname "$P" -exec bash -c "echo 90000000 | sudo tee  {} &>/dev/null && cat  {} &>/dev/null && echo  {} && cat {}" \;
 done
 
 if [[ $* =~ "x" ]]; then
