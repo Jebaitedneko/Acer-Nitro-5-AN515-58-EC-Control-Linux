@@ -1,13 +1,18 @@
 #!/bin/bash
 
 if [ $# -le 0 ]; then
-	echo "PWR:  [q]uiet [d]efault [p]erformance"
-	echo "FAN:  [a]uto  [c]ustom  [m]ax"
-	echo "DBG: e[x]tract ec"
+	echo "ENA: [w]rite to ec"
+	echo "PWR: [q]uiet [d]efault [p]erformance"
+	echo "FAN: [a]uto  [c]ustom  [m]ax"
+	echo "DBG: [r]ead from ec"
+	echo "DBG: [e]nergy data from intel_rapl"
+	echo "DBG: [n]vidia-powerd restart"
 	exit
 fi
 
-if [[ "$(lsmod | grep ec_sys | wc -c)" -gt 0 && ! -f /tmp/.mod-ec_sys-init ]]; then
+echo on | sudo tee /sys/module/msr/parameters/allow_writes &>/dev/null
+
+if [[ "$(lsmod | grep ec_sys | cut -f1 -d' ' | tr -d '\n' | wc -c)" -ne 6 ]]; then
 	sudo rmmod ec_sys
 	if ! sudo insmod ~/ec_sys.ko write_support=1; then
 		sudo dmesg | tail
@@ -15,28 +20,22 @@ if [[ "$(lsmod | grep ec_sys | wc -c)" -gt 0 && ! -f /tmp/.mod-ec_sys-init ]]; t
 	else
 		echo 1 > /tmp/.mod-ec_sys-init
 	fi
-else
-	echo "Custom ec_sys loaded as /tmp/.mod-ec_sys-init exists"
 fi
-
-if [[ "$(lsmod | grep uvcvideo | wc -c)" -gt 0 && ! -f /tmp/.mod-uvcvideo-init ]]; then
-	sudo rmmod uvcvideo
-	if ! sudo insmod ~/uvcvideo.ko; then
-		sudo dmesg | tail
-		exit
-	else
-		echo 1 > /tmp/.mod-uvcvideo-init
-	fi
-else
-	echo "Custom uvcvideo loaded as /tmp/.mod-uvcvideo-init exists"
-fi
-
 
 EC=/sys/kernel/debug/ec/ec0/io
 
 function ecw() {
 	# shellcheck disable=SC2059
-    printf "$2" | sudo dd of=$EC bs=1 seek="$1" count=1 conv=notrunc &> /dev/null
+	printf "$2" | sudo dd of=$EC bs=1 seek="$1" count=1 conv=notrunc &>/dev/null
+}
+
+function set_power_limits() {
+	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_0_power_limit_uw" -print -exec bash -c "echo $1 | sudo tee {}" \;
+	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_1_power_limit_uw" -print -exec bash -c "echo $2 | sudo tee {}" \;
+	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_2_power_limit_uw" -print -exec bash -c "echo 215000000 | sudo tee {}" \;
+	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_0_time_window_us" -print -exec bash -c "echo 128000000 | sudo tee {}" \;
+	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_1_time_window_us" -print -exec bash -c "echo 128000000 | sudo tee {}" \;
+	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_2_time_window_us" -print -exec bash -c "echo 128000000 | sudo tee {}" \;
 }
 
 ecw $((0x03)) '\x11' # Write-Enable
@@ -46,18 +45,22 @@ if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 		echo "PWR - Quiet"
 		ecw $((0x2c)) '\x00' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
-		sudo systemctl restart nvidia-powerd
+		set_power_limits 10000000 15000000
 	fi
 	if [[ $* =~ "d" ]]; then
 		echo "PWR - Default"
 		ecw $((0x2c)) '\x01' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
-		sudo systemctl restart nvidia-powerd
+		set_power_limits 45000000 75000000
 	fi
 	if [[ $* =~ "p" ]]; then
 		echo "PWR - Performance"
 		ecw $((0x2c)) '\x04' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
+		set_power_limits 90000000 10000000
+	fi
+	if [[ $* =~ "n" ]]; then
+		echo "PWR - nvidia-powerd restart"
 		sudo systemctl restart nvidia-powerd
 	fi
 	if [[ $* =~ "a" ]]; then
@@ -84,12 +87,12 @@ if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 	fi
 fi
 
-for P in "constraint_*_power_limit_uw" "constraint_*_max_power_uw" "constraint_*_time_window_us"; do
-	find /sys/devices/virtual/powercap -type f -iname "$P" -exec bash -c "echo 90000000 | sudo tee  {} &>/dev/null && cat  {} &>/dev/null && echo  {} && cat {}" \;
-done
-
-if [[ $* =~ "x" ]]; then
+if [[ $* =~ "r" ]]; then
 	if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 		sudo xxd -g1 $EC
 	fi
+fi
+
+if [[ $* =~ "e" ]]; then
+	find /sys/devices/virtual/powercap -type f -iname "energy_uj" -print -exec bash -c "sudo cat {}" \;
 fi
