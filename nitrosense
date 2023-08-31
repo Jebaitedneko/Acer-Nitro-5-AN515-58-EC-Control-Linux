@@ -30,8 +30,8 @@ function ecw() {
 }
 
 function set_power_limits() {
-	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_0_power_limit_uw" -print -exec bash -c "echo $1 | sudo tee {}" \;
-	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_1_power_limit_uw" -print -exec bash -c "echo $2 | sudo tee {}" \;
+	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_0_power_limit_uw" -print -exec bash -c "echo "${1}000000" | sudo tee {}" \;
+	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_1_power_limit_uw" -print -exec bash -c "echo "${2}000000" | sudo tee {}" \;
 	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_2_power_limit_uw" -print -exec bash -c "echo 215000000 | sudo tee {}" \;
 	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_0_time_window_us" -print -exec bash -c "echo 128000000 | sudo tee {}" \;
 	find /sys/devices/virtual/powercap -maxdepth 3 -type f -iname "constraint_1_time_window_us" -print -exec bash -c "echo 128000000 | sudo tee {}" \;
@@ -45,19 +45,19 @@ if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 		echo "PWR - Quiet"
 		ecw $((0x2c)) '\x00' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
-		set_power_limits 10000000 15000000
+		set_power_limits 10 15
 	fi
 	if [[ $* =~ "d" ]]; then
 		echo "PWR - Default"
 		ecw $((0x2c)) '\x01' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
-		set_power_limits 45000000 75000000
+		set_power_limits 45 75
 	fi
 	if [[ $* =~ "p" ]]; then
 		echo "PWR - Performance"
 		ecw $((0x2c)) '\x04' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
-		set_power_limits 90000000 10000000
+		set_power_limits 75 115
 	fi
 	if [[ $* =~ "n" ]]; then
 		echo "PWR - nvidia-powerd restart"
