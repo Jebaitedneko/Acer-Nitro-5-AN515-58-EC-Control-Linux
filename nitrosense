@@ -1,7 +1,6 @@
 #!/bin/bash
 
 if [ $# -le 0 ]; then
-	echo "ENA: [w]rite to ec"
 	echo "PWR: [q]uiet [d]efault [p]erformance"
 	echo "FAN: [a]uto  [c]ustom  [m]ax"
 	echo "DBG: [r]ead from ec"
@@ -10,21 +9,14 @@ if [ $# -le 0 ]; then
 	exit
 fi
 
-echo on | sudo tee /sys/module/msr/parameters/allow_writes &>/dev/null
+EC=/dev/ec
 
-if [[ "$(lsmod | grep ec_sys | cut -f1 -d' ' | tr -d '\n' | wc -c)" -ne 6 ]]; then
-	sudo rmmod ec_sys
-	if [ -f ~/ec_sys.ko ]; then
-		if ! sudo insmod ~/ec_sys.ko write_support=1; then
-			sudo dmesg | tail
-			exit
-		fi
-	else
-		sudo modprobe ec_sys write_support=1
-	fi
+if [[ ! -c "$EC" ]]; then
+	echo "EC not found at $EC!"
+    echo "please install the kernel module 'acpi_ec' first and then reboot."
+	echo "Check https://github.com/MusiKid/acpi_ec?tab=readme-ov-file#installation"
+	exit 1
 fi
-
-EC=/sys/kernel/debug/ec/ec0/io
 
 if [[ $* =~ "r" ]]; then
 	if [[ $(sudo ls $EC 2>/dev/null) ]]; then
