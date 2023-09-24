@@ -6,60 +6,47 @@ The script also restores Keyboard RGB Profile set in Windows
 
 Along with setting PL1 and PL2 limits via MSR and MCHBAR
 
+Support running under secure boot mode or a lockdowned kernel with the help of [acpi_ec](https://github.com/MusiKid/acpi_ec)
+
 # Requirements
 
-Kernel Commandline (/etc/default/grub)
-
-```
-ec_sys.write_support=1 msr.allow_writes=on
-```
-
-The `ec_sys.ko` module to be present at `~`
-
-Find it on your current kernel with
-
-```
-find /lib/modules -type f -iname "*ec_sys.ko*"
-```
-
-Copy the .ko file over to `~` as `ec_sys.ko`
-
-```
-find /lib/modules -type f -iname "ec_sys.ko" -exec cp {} ~ \;
-```
+1. Install the kernel module `acpi_ec` according to the instructions [here](https://github.com/MusiKid/acpi_ec?tab=readme-ov-file#installation).
+2. Reboot.
 
 # Usage
 
 To show available switches
 
 ```
-sudo bash nitrosense
+./nitrosense
 ```
 
 Available Switches
 
 ```
-PWR:  [q]uiet [d]efault [p]erformance
-FAN:  [a]uto  [c]ustom  [m]ax
-DBG: e[x]tract ec
+PWR: [q]uiet [d]efault [p]erformance
+FAN: [a]uto  [c]ustom  [m]ax
+DBG: [r]ead from ec
+DBG: [e]nergy data from intel_rapl
+DBG: [n]vidia-powerd restart
 ```
 
 Example: Default Power with Auto Fan
 
 ```
-sudo bash nitrosense da
+./nitrosense da
 ```
 
 Example: Performance Power with Max Fan
 
 ```
-sudo bash nitrosense pm
+./nitrosense pm
 ```
 
 Example: Performance Power with Custom Fan at 50%
 
 ```
-sudo bash nitrosense pc 50
+./nitrosense pc 50
 ```
 
 # Notes
@@ -71,5 +58,5 @@ Along with PL1 and PL2 Timing of 1 minute
 To dump current EC registers
 
 ```
-sudo bash nitrosense x
+./nitrosense r
 ```
