@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -Eeuo pipefail
+
 if [ $# -le 0 ]; then
 	echo "ENA: [w]rite to ec"
 	echo "PWR: [q]uiet [d]efault [p]erformance"
@@ -12,15 +14,22 @@ fi
 
 echo on | sudo tee /sys/module/msr/parameters/allow_writes &>/dev/null
 
-if [[ "$(lsmod | grep ec_sys | cut -f1 -d' ' | tr -d '\n' | wc -c)" -ne 6 ]]; then
-	sudo rmmod ec_sys
+if [[ "$(lsmod | grep ec_sys | wc -c)" -gt 1 ]]; then
 	if [ -f ~/ec_sys.ko ]; then
-		if ! sudo insmod ~/ec_sys.ko write_support=1; then
-			sudo dmesg | tail
-			exit
-		fi
+		sudo rmmod ec_sys
 	else
-		sudo modprobe ec_sys write_support=1
+		sudo modprobe -r ec_sys
+	fi
+fi
+if [ -f ~/ec_sys.ko ]; then
+	if ! sudo insmod ~/ec_sys.ko write_support=1; then
+		sudo dmesg | tail
+		exit
+	fi
+else
+	if ! sudo modprobe ec_sys write_support=1; then
+		sudo dmesg | tail
+		exit
 	fi
 fi
 
@@ -29,11 +38,15 @@ EC=/sys/kernel/debug/ec/ec0/io
 if [[ $* =~ "r" ]]; then
 	if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 		sudo xxd -g1 $EC
+	else
+		echo "EC interface not enabled"
 	fi
 fi
 
 if [[ $* =~ "e" ]]; then
-	find /sys/devices/virtual/powercap -type f -iname "energy_uj" -print -exec bash -c "sudo cat {}" \;
+	find /sys/devices/virtual/powercap -type f -iname "energy_uj" -print | while read -r f; do
+		echo -e "$f\n$(cat "$f")"
+	done
 fi
 
 function ecw() {
@@ -42,6 +55,8 @@ function ecw() {
 }
 
 function set_power_limits() {
+	echo "$3" | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
+	cat /sys/devices/system/cpu/cpu*/cpufreq/scaling_governor
 	MSR=/sys/devices/virtual/powercap/intel-rapl/intel-rapl:0
 	MCH=/sys/devices/virtual/powercap/intel-rapl-mmio/intel-rapl-mmio:0
 	for N in "$MSR" "$MCH"; do
@@ -61,19 +76,27 @@ if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 		echo "PWR - Quiet"
 		ecw $((0x2c)) '\x00' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
-		set_power_limits 10 15
+		set_power_limits 10 10 "powersave"
+		echo powersupersave | sudo tee /sys/module/pcie_aspm/parameters/policy
+		echo power | sudo tee /sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference
 	fi
 	if [[ $* =~ "d" ]]; then
 		echo "PWR - Default"
+		ecw $((0xab)) '\x0a' # 08 0a SDTM (Shutdown Therm Temp) temp=val*10, default 80*c
 		ecw $((0x2c)) '\x01' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
-		set_power_limits 45 75
+		set_power_limits 75 75 "performance"
+		echo performance | sudo tee /sys/module/pcie_aspm/parameters/policy
+		echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference
 	fi
 	if [[ $* =~ "p" ]]; then
 		echo "PWR - Performance"
+		ecw $((0xab)) '\x0a' # 08 0a SDTM (Shutdown Therm Temp) temp=val*10, default 80*c
 		ecw $((0x2c)) '\x04' # 00 01 04 PWR: quiet default perf
 		ecw $((0x2d)) '\x04' # 04 05 PWR
-		set_power_limits 75 95
+		set_power_limits 95 95 "performance"
+		echo performance | sudo tee /sys/module/pcie_aspm/parameters/policy
+		echo performance | sudo tee /sys/devices/system/cpu/cpufreq/policy*/energy_performance_preference
 	fi
 	if [[ $* =~ "n" ]]; then
 		echo "PWR - nvidia-powerd restart"
@@ -101,4 +124,6 @@ if [[ $(sudo ls $EC 2>/dev/null) ]]; then
 		ecw $((0x21)) '\x20' # 10 20 30 GPUF: auto max cust
 		ecw $((0x22)) '\x08' # 04 08 0c CPUF: auto max cust
 	fi
+else
+	echo "EC interface not enabled"
 fi
